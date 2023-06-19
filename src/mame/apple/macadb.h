@@ -78,7 +78,7 @@ private:
 
 	int adb_pollkbd(int update);
 	int adb_pollmouse();
-	void adb_accummouse( uint8_t *MouseX, uint8_t *MouseY );
+	void adb_accummouse(int *out_diffX, int *out_diffY);
 	void adb_talk();
 
 	inline void set_adb_line(int linestate) { write_adb_data(linestate); }

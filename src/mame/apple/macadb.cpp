@@ -485,50 +485,56 @@ int macadb_device::adb_pollmouse()
 	return 0;
 }
 
-void macadb_device::adb_accummouse( uint8_t *MouseX, uint8_t *MouseY )
+int foo(int lastC, int targetC, int *out_diffC, int x)
 {
-	int MouseCountX = 0, MouseCountY = 0;
-	int NewX, NewY;
+	assert(lastC >= 0 && lastC < 256);
+	assert(targetC >= 0 && targetC < 256);
 
-	NewX = m_mouse1->read();
-	NewY = m_mouse2->read();
+	int diffC = targetC - lastC;
 
-//  printf("pollmouse: X %d Y %d\n", NewX, NewY);
+	// check for wrap
+	if (diffC > 128)
+		diffC -= 256;
+	else if (diffC < -128)
+		diffC += 256;
+
+	// clamp to 7 bits
+	if (diffC > 63)
+		diffC = 63;
+	else if (diffC < -64)
+		diffC = -64;
+
+	// compute actual new position
+	int newC = lastC + diffC;
+	if (newC > 255)
+		newC -= 256;
+	else if (newC < 0)
+		newC += 256;
+	assert(newC >= 0 && newC < 256);
+
+	*out_diffC = diffC;
+	return newC;
+}
+
+void macadb_device::adb_accummouse(int *out_diffX, int *out_diffY)
+{
+	int diffX = 0;
+	int diffY = 0;
+	int targetX = m_mouse1->read();
+	int targetY = m_mouse2->read();
 
 	/* see if it moved in the x coord */
-	if (NewX != m_adb_lastmousex)
-	{
-		int diff = NewX - m_adb_lastmousex;
-
-		/* check for wrap */
-		if (diff > 0x80)
-			diff = 0x100-diff;
-		if  (diff < -0x80)
-			diff = -0x100-diff;
-
-		MouseCountX += diff;
-		m_adb_lastmousex = NewX;
-	}
+	if (targetX != m_adb_lastmousex)
+		m_adb_lastmousex = foo(m_adb_lastmousex, targetX, &diffX, 1);
 
 	/* see if it moved in the y coord */
-	if (NewY != m_adb_lastmousey)
-	{
-		int diff = NewY - m_adb_lastmousey;
-
-		/* check for wrap */
-		if (diff > 0x80)
-			diff = 0x100-diff;
-		if  (diff < -0x80)
-			diff = -0x100-diff;
-
-		MouseCountY += diff;
-		m_adb_lastmousey = NewY;
-	}
+	if (targetY != m_adb_lastmousey)
+		m_adb_lastmousey = foo(m_adb_lastmousey, targetY, &diffY, 0);
 
 	m_adb_lastbutton = m_mouse0->read() & 0x01;
 
-	*MouseX = (uint8_t)MouseCountX;
-	*MouseY = (uint8_t)MouseCountY;
+	*out_diffX = diffX;
+	*out_diffY = diffY;
 }
 
 void macadb_device::adb_talk()
@@ -594,7 +600,7 @@ void macadb_device::adb_talk()
 				m_adb_direction = 0;    // output to Mac
 				if (addr == m_adb_mouseaddr)
 				{
-					uint8_t mouseX, mouseY;
+					int mouseX, mouseY;
 
 					LOGMASKED(LOG_TALK_LISTEN, "Talking to mouse, register %x\n", reg);
 
@@ -616,7 +622,7 @@ void macadb_device::adb_talk()
 							m_adb_buffer[0] |= mouseY & 0x7f;
 							m_adb_buffer[1] = (mouseX & 0x7f) | 0x80;
 
-							if ((m_adb_buffer[0] != m_last_mouse[0]) || (m_adb_buffer[1] != m_last_mouse[1]))
+							if (mouseX || mouseY || (m_adb_buffer[0] != m_last_mouse[0]) || (m_adb_buffer[1] != m_last_mouse[1]))
 							{
 								m_adb_datasize = 2;
 								m_last_mouse[0] = m_adb_buffer[0];
